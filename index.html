@@ -82,8 +82,8 @@
   <!-- ============================== STEP 1: FORM ============================== -->
   <div id="step-form" class="step-screen active">
     <div class="card-white p-7 md:p-9">
-      <h2 class="text-xl md:text-2xl font-bold text-charcoal mb-2">Thông tin nhận app</h2>
-      <p class="text-sm text-charcoal/65 mb-6">Mình sẽ gửi link app vào email mẹ điền dưới đây.</p>
+      <h2 class="text-xl md:text-2xl font-bold text-charcoal mb-2">Thông tin nhận Trợ Lý</h2>
+      <p class="text-sm text-charcoal/65 mb-6">Mình sẽ gửi link Trợ Lý vào email mẹ điền dưới đây.</p>
 
       <form id="order-form" class="space-y-4">
         <div>
@@ -92,10 +92,10 @@
             class="w-full py-4 px-5 bg-cream-2 border border-charcoal/10 rounded-2xl outline-none focus:border-terra focus:ring-2 focus:ring-terra/20 transition-all">
         </div>
         <div>
-          <label class="block text-xs font-bold text-charcoal/55 uppercase tracking-widest mb-2 ml-1">Email nhận app</label>
+          <label class="block text-xs font-bold text-charcoal/55 uppercase tracking-widest mb-2 ml-1">Email nhận Trợ Lý</label>
           <input required type="email" id="input-email" placeholder="maianh@gmail.com"
             class="w-full py-4 px-5 bg-cream-2 border border-charcoal/10 rounded-2xl outline-none focus:border-terra focus:ring-2 focus:ring-terra/20 transition-all">
-          <p class="text-xs text-charcoal/50 mt-2 ml-1">⚠️ Đảm bảo email chính xác — mình gửi link app vào đây</p>
+          <p class="text-xs text-charcoal/50 mt-2 ml-1">⚠️ Đảm bảo email chính xác — mình gửi link Trợ Lý vào đây</p>
         </div>
         <div>
           <label class="block text-xs font-bold text-charcoal/55 uppercase tracking-widest mb-2 ml-1">Số điện thoại</label>
@@ -206,12 +206,12 @@
       <div class="text-6xl mb-4">🎉</div>
       <h2 class="text-2xl md:text-3xl font-bold text-charcoal mb-3">Cảm ơn mẹ!</h2>
       <p class="text-base text-charcoal/75 mb-7">
-        Mình đã nhận được thanh toán. Link app đang được gửi đến email mẹ.
+        Mình đã nhận được thanh toán. Link Trợ Lý đang được gửi đến email mẹ.
       </p>
 
       <!-- App link -->
       <div class="bg-peach-soft rounded-2xl p-6 mb-6 text-left">
-        <p class="text-xs font-bold text-charcoal/55 uppercase tracking-widest mb-3">🔗 Link truy cập app</p>
+        <p class="text-xs font-bold text-charcoal/55 uppercase tracking-widest mb-3">🔗 Link truy cập Trợ Lý</p>
         <a id="app-link" href="#" target="_blank" class="block bg-white rounded-xl p-4 font-bold text-terra hover:bg-terra hover:text-white transition-all text-center break-all">
           —
         </a>
@@ -271,6 +271,7 @@ const AMOUNT = 199000;
 // ============================================================
 let currentOrderId = null;
 let currentEmail = null;
+let currentName = null;
 let pollInterval = null;
 let pollCount = 0;
 const POLL_INTERVAL_MS = 3000;
@@ -287,6 +288,19 @@ function showScreen(name) {
 
 function formatVND(num) {
   return new Intl.NumberFormat('vi-VN').format(num) + 'đ';
+}
+
+// Lấy first name từ full name VN (từ cuối): "Nguyễn Thị Linh" → "LINH"
+// Bỏ dấu + uppercase để dễ match webhook
+function getFirstName(fullName) {
+  if (!fullName) return '';
+  const noDiacritics = fullName
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+  const parts = noDiacritics.trim().split(/\s+/);
+  return parts[parts.length - 1].toUpperCase();
 }
 
 // ============================================================
@@ -318,6 +332,7 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
     if (result.order_id) {
       currentOrderId = result.order_id;
       currentEmail = data.email;
+      currentName = data.name;
       renderPayScreen(result.order_id, result.amount || AMOUNT);
       showScreen('pay');
       startPolling();
@@ -338,19 +353,24 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
 // RENDER PAYMENT SCREEN — QR + bank info
 // ============================================================
 function renderPayScreen(orderId, amount) {
+  // Generate content CK = "TLOT060 LINH" (mã đơn + first name)
+  // Để hệ thống match đa cấp: mã đơn (cấp 1) hoặc tên (cấp 2/3)
+  const firstName = getFirstName(currentName);
+  const ckContent = firstName ? `${orderId} ${firstName}` : orderId;
+
   document.getElementById('order-id-display').textContent = orderId;
   document.getElementById('amount-display').textContent = formatVND(amount);
   document.getElementById('amount-text').textContent = formatVND(amount);
-  document.getElementById('content-text').textContent = orderId;
-  document.getElementById('content-warning').textContent = orderId;
+  document.getElementById('content-text').textContent = ckContent;
+  document.getElementById('content-warning').textContent = ckContent;
 
-  // SePay QR generator
-  const qrUrl = `https://qr.sepay.vn/img?bank=${BANK_CODE}&acc=${BANK_ACCOUNT}&template=compact&amount=${amount}&des=${orderId}`;
+  // SePay QR generator — nội dung CK có cả tên để khách quét QR không cần gõ
+  const qrUrl = `https://qr.sepay.vn/img?bank=${BANK_CODE}&acc=${BANK_ACCOUNT}&template=compact&amount=${amount}&des=${encodeURIComponent(ckContent)}`;
   document.getElementById('qr-image').src = qrUrl;
 
   // Update copy data
   document.getElementById('copy-amount').dataset.copy = amount;
-  document.getElementById('copy-content').dataset.copy = orderId;
+  document.getElementById('copy-content').dataset.copy = ckContent;
 }
 
 // ============================================================
@@ -405,7 +425,7 @@ function onPaymentSuccess(data) {
   document.getElementById('success-order-id').textContent = currentOrderId;
   document.getElementById('email-display').textContent = currentEmail;
   document.getElementById('app-link').href = data.app_url || '#';
-  document.getElementById('app-link').textContent = data.app_url || 'Mở app ngay';
+  document.getElementById('app-link').textContent = data.app_url || 'Mở Trợ Lý ngay';
   showScreen('success');
 
   // Optional: confetti animation (nếu thích, em có thể add canvas confetti library)
